@@ -62,11 +62,11 @@ package:
     - ./bin/**
 
 functions:
-  createUserPool:
-    handler: bin/createUserPool
+  createAccount:
+    handler: bin/createAccount
     events:
       - http:
-          path: createUserPool
+          path: createAccount
           method: post
 
 #    The following are a few example events you can configure

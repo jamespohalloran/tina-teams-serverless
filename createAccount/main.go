@@ -1,5 +1,8 @@
 package main
 
+// The purpose of this lambda is to provision the resources for a user whenever they create an account. This means:
+// A) A user pool and entities needs for that user pool (domain, default dashboard app)
+// B) An AppSync record
 import (
 	"context"
 	"encoding/json"
@@ -15,20 +18,20 @@ import (
 
 type Response events.APIGatewayProxyResponse
 
-type CreatePoolRequest struct {
-	PoolName string `json:"name"`
+type CreateAccountRequest struct {
+	PoolName    string `json:"name"`
+	CallbackURL string `json:"callbackUrl"`
 }
 
 func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Response, error) {
-	var createPoolRequest CreatePoolRequest
+	var createPoolRequest CreateAccountRequest
 
 	err := json.Unmarshal([]byte(request.Body), &createPoolRequest)
 	if err != nil {
 		return Response{StatusCode: 400}, err
 	}
 
-	fmt.Println("THIS IS THE CREATE POOL REQUEST")
-	fmt.Println(createPoolRequest)
+	domainPrefix := fmt.Sprintf("tina-auth-%v", slug.Make(createPoolRequest.PoolName))
 
 	awsSession, err := session.NewSession()
 
@@ -57,33 +60,40 @@ func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Respon
 
 	// create a domain to user for this UserPool, possibly will want to switch this to a custom domain
 	poolDomainParams := &cognitoidentityprovider.CreateUserPoolDomainInput{
-		Domain:     aws.String(fmt.Sprintf("tina-auth-%v", slug.Make(createPoolRequest.PoolName))),
+		Domain:     aws.String(domainPrefix),
 		UserPoolId: createPoolResponse.UserPool.Id,
 	}
 
-	_, err = cognitoService.CreateUserPoolDomain(poolDomainParams)
+	dashboardDomain, err := cognitoService.CreateUserPoolDomain(poolDomainParams)
 	if err != nil {
 		return Response{StatusCode: 500}, err
 	}
-
 	dashboardClientParams := &cognitoidentityprovider.CreateUserPoolClientInput{
 		ClientName: aws.String("Dashboard"),
 
 		AllowedOAuthFlows:               []*string{aws.String("code")}, // TODO: Confirm this is correct for PKCE
 		AllowedOAuthFlowsUserPoolClient: aws.Bool(true),
 		AllowedOAuthScopes:              []*string{aws.String("email"), aws.String("profile"), aws.String("openid")},
-		CallbackURLs:                    []*string{aws.String("http://localhost:3000")},
+		CallbackURLs:                    []*string{aws.String(createPoolRequest.CallbackURL)},
 		SupportedIdentityProviders:      []*string{aws.String("COGNITO")},
 		UserPoolId:                      createPoolResponse.UserPool.Id,
 	}
-
 	createClientResponse, err := cognitoService.CreateUserPoolClient(dashboardClientParams)
 	if err != nil {
 		return Response{StatusCode: 500}, err
 	}
 
-	fmt.Println(createClientResponse)
-	return Response{StatusCode: 201}, nil
+	fmt.Println(createClientResponse.UserPoolClient.ClientId)
+
+	fmt.Println(dashboardDomain)
+	return Response{StatusCode: 302, Headers: map[string]string{
+		"Location": fmt.Sprintf(
+			"https://%v.auth.us-east-1.amazoncognito.com/signup?client_id=%v&response_type=code&scope=email+openid+profile&redirect_uri=%v",
+			domainPrefix,
+			*createClientResponse.UserPoolClient.ClientId,
+			createPoolRequest.CallbackURL,
+		),
+	}}, nil
 
 }
 
