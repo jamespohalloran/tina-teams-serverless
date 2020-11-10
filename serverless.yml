@@ -23,6 +23,13 @@ frameworkVersion: '2'
 provider:
   name: aws
   runtime: go1.x
+  iamRoleStatements:
+    - Effect: "Allow"
+      Action: 
+        - cognito-identity:*
+        - cognito-idp:*
+        - cognito-sync:*
+      Resource: "*"
 
 # you can overwrite defaults here
 #  stage: dev
@@ -55,18 +62,13 @@ package:
     - ./bin/**
 
 functions:
-  hello:
-    handler: bin/hello
+  createUserPool:
+    handler: bin/createUserPool
     events:
       - http:
-          path: hello
-          method: get
-  world:
-    handler: bin/world
-    events:
-      - http:
-          path: world
-          method: get
+          path: createUserPool
+          method: post
+
 #    The following are a few example events you can configure
 #    NOTE: Please make sure to change your handler code to work with those events
 #    Check the event documentation for details
