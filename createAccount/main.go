@@ -18,13 +18,19 @@ import (
 
 type Response events.APIGatewayProxyResponse
 
-type CreateAccountRequest struct {
-	PoolName    string `json:"name"`
-	CallbackURL string `json:"callbackUrl"`
+type CreateUserPoolRequest struct {
+	PoolName    string `json:"name" schema:"name"`
+	CallbackURL string `json: "callbackUrl", schema:"callbackUrl"`
+}
+
+type CreateUserPoolResponse struct {
+	UserPoolID string `json: "poolId"`
+	ClientID   string `json: "clientId"`
 }
 
 func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Response, error) {
-	var createPoolRequest CreateAccountRequest
+	var createPoolRequest CreateUserPoolRequest
+	var response CreateUserPoolResponse
 
 	err := json.Unmarshal([]byte(request.Body), &createPoolRequest)
 	if err != nil {
@@ -58,16 +64,6 @@ func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Respon
 		return Response{StatusCode: 500}, err
 	}
 
-	// create a domain to user for this UserPool, possibly will want to switch this to a custom domain
-	poolDomainParams := &cognitoidentityprovider.CreateUserPoolDomainInput{
-		Domain:     aws.String(domainPrefix),
-		UserPoolId: createPoolResponse.UserPool.Id,
-	}
-
-	dashboardDomain, err := cognitoService.CreateUserPoolDomain(poolDomainParams)
-	if err != nil {
-		return Response{StatusCode: 500}, err
-	}
 	dashboardClientParams := &cognitoidentityprovider.CreateUserPoolClientInput{
 		ClientName: aws.String("Dashboard"),
 
@@ -78,22 +74,31 @@ func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Respon
 		SupportedIdentityProviders:      []*string{aws.String("COGNITO")},
 		UserPoolId:                      createPoolResponse.UserPool.Id,
 	}
-	createClientResponse, err := cognitoService.CreateUserPoolClient(dashboardClientParams)
+	clientResponse, err := cognitoService.CreateUserPoolClient(dashboardClientParams)
 	if err != nil {
 		return Response{StatusCode: 500}, err
 	}
 
-	fmt.Println(createClientResponse.UserPoolClient.ClientId)
+	// create a domain to user for this UserPool, possibly will want to switch this to a custom domain
+	poolDomainParams := &cognitoidentityprovider.CreateUserPoolDomainInput{
+		Domain:     aws.String(domainPrefix),
+		UserPoolId: createPoolResponse.UserPool.Id,
+	}
 
-	fmt.Println(dashboardDomain)
-	return Response{StatusCode: 302, Headers: map[string]string{
-		"Location": fmt.Sprintf(
-			"https://%v.auth.us-east-1.amazoncognito.com/signup?client_id=%v&response_type=code&scope=email+openid+profile&redirect_uri=%v",
-			domainPrefix,
-			*createClientResponse.UserPoolClient.ClientId,
-			createPoolRequest.CallbackURL,
-		),
-	}}, nil
+	_, err = cognitoService.CreateUserPoolDomain(poolDomainParams)
+	if err != nil {
+		return Response{StatusCode: 500}, err
+	}
+
+	response.UserPoolID = *createPoolResponse.UserPool.Id
+	response.ClientID = *clientResponse.UserPoolClient.ClientId
+
+	responseJSON, err := json.Marshal(response)
+	if err != nil {
+		return Response{StatusCode: 500}, err
+	}
+
+	return Response{StatusCode: 201, Body: string(responseJSON)}, nil
 
 }
 
