@@ -24,8 +24,8 @@ type CreateUserPoolRequest struct {
 }
 
 type CreateUserPoolResponse struct {
-	UserPoolID string `json: "poolId"`
-	ClientID   string `json: "clientId"`
+	UserPoolID string
+	ClientID   string
 }
 
 func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Response, error) {
@@ -53,6 +53,7 @@ func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Respon
 		AdminCreateUserConfig: &cognitoidentityprovider.AdminCreateUserConfigType{
 			AllowAdminCreateUserOnly: aws.Bool(false), // users can create their own accounts
 		},
+		AutoVerifiedAttributes: []*string{aws.String("email")},
 		// user is allowed to use their email as their username
 		UsernameAttributes: []*string{aws.String("email")},
 
@@ -98,7 +99,11 @@ func Handler(ctx context.Context, request events.APIGatewayProxyRequest) (Respon
 		return Response{StatusCode: 500}, err
 	}
 
-	return Response{StatusCode: 201, Body: string(responseJSON)}, nil
+	return Response{
+		StatusCode: 201,
+		Headers:    map[string]string{"Access-Control-Allow-Origin": "http://localhost:3002"},
+		Body:       string(responseJSON),
+	}, nil
 
 }
 
